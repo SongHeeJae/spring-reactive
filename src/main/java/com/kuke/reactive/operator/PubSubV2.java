@@ -30,7 +30,7 @@ public class PubSubV2 {
     public static void main(String[] args) {
         Publisher<Integer> pub = iterPub(Stream.iterate(1, a -> a + 1).limit(10)
                 .collect(Collectors.toList()));
-        Publisher<Integer> mapPub = mapPub(pub, s -> s * 10);
+        Publisher<String> mapPub = mapPub(pub, s -> "[" + s + "]");
 //        Publisher<Integer> reducePub = reducePub(pub, 0, (a, b) -> a + b);
         mapPub.subscribe(logSub());
     }
@@ -57,11 +57,12 @@ public class PubSubV2 {
 //        };
 //    }
 
-    private static <T> Publisher<T> mapPub(Publisher<T> pub, Function<T, T> f) {
-        return new Publisher<T>() {
+    // T -> R
+    private static <T, R> Publisher<R> mapPub(Publisher<T> pub, Function<T, R> f) {
+        return new Publisher<R>() {
             @Override
-            public void subscribe(Subscriber<? super T> sub) {
-                pub.subscribe(new DelegateSub<T>(sub) {
+            public void subscribe(Subscriber<? super R> sub) {
+                pub.subscribe(new DelegateSub<T, R>(sub) {
                     @Override
                     public void onNext(T t) {
                         sub.onNext(f.apply(t));
