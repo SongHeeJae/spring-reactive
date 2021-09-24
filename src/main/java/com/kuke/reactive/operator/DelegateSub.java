@@ -3,11 +3,11 @@ package com.kuke.reactive.operator;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
-public class DelegateSub implements Subscriber<Integer> {
+public class DelegateSub<T> implements Subscriber<T> {
 
     Subscriber sub;
 
-    public DelegateSub(Subscriber sub) {
+    public DelegateSub(Subscriber<? super T> sub) {
         this.sub = sub;
     }
 
@@ -17,8 +17,8 @@ public class DelegateSub implements Subscriber<Integer> {
     }
 
     @Override
-    public void onNext(Integer integer) {
-        sub.onNext(integer);
+    public void onNext(T t) {
+        sub.onNext(t);
     }
 
     @Override
