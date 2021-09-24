@@ -30,32 +30,32 @@ public class PubSubV2 {
     public static void main(String[] args) {
         Publisher<Integer> pub = iterPub(Stream.iterate(1, a -> a + 1).limit(10)
                 .collect(Collectors.toList()));
-        Publisher<String> mapPub = mapPub(pub, s -> "[" + s + "]");
-//        Publisher<Integer> reducePub = reducePub(pub, 0, (a, b) -> a + b);
-        mapPub.subscribe(logSub());
+//        Publisher<String> mapPub = mapPub(pub, s -> "[" + s + "]");
+        Publisher<StringBuilder> reducePub = reducePub(pub, new StringBuilder(), (a, b) -> a.append(b+","));
+        reducePub.subscribe(logSub());
     }
 
-//    private static Publisher<Integer> reducePub(Publisher<Integer> pub, int init, BiFunction<Integer, Integer, Integer> bf) {
-//        return new Publisher<Integer>() {
-//            @Override
-//            public void subscribe(Subscriber<? super Integer> sub) {
-//                pub.subscribe(new DelegateSub(sub) {
-//                    int result = init;
-//
-//                    @Override
-//                    public void onNext(Integer integer) {
-//                        result = bf.apply(result, integer);
-//                    }
-//
-//                    @Override
-//                    public void onComplete() {
-//                        sub.onNext(result);
-//                        sub.onComplete();
-//                    }
-//                });
-//            }
-//        };
-//    }
+    private static <T, R> Publisher<R> reducePub(Publisher<T> pub, R init, BiFunction<R, T, R> bf) {
+        return new Publisher<R>() {
+            @Override
+            public void subscribe(Subscriber<? super R> sub) {
+                pub.subscribe(new DelegateSub<T, R>(sub) {
+                    R result = init;
+
+                    @Override
+                    public void onNext(T t) {
+                        result = bf.apply(result, t);
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        sub.onNext(result);
+                        sub.onComplete();
+                    }
+                });
+            }
+        };
+    }
 
     // T -> R
     private static <T, R> Publisher<R> mapPub(Publisher<T> pub, Function<T, R> f) {
