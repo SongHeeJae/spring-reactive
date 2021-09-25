@@ -1,4 +1,4 @@
-package com.kuke.reactive.operator;
+package com.kuke.reactive.streams.operator;
 
 import reactor.core.publisher.Flux;
 

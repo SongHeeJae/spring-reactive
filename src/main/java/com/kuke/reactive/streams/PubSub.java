@@ -1,4 +1,4 @@
-package com.kuke.reactive;
+package com.kuke.reactive.streams;
 
 import java.util.Arrays;
 import java.util.Iterator;

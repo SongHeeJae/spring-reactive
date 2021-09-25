@@ -1,4 +1,4 @@
-package com.kuke.reactive.operator;
+package com.kuke.reactive.streams.operator;
 
 import lombok.extern.slf4j.Slf4j;
 import org.reactivestreams.Publisher;
