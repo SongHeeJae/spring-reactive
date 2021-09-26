@@ -19,8 +19,11 @@ import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.DeferredResult;
 
+import java.util.Queue;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
 
 @Slf4j
@@ -31,23 +34,31 @@ public class ReactiveApplication {
 	@RestController
 	public static class MyController {
 
-		// 굳이 작업을 서블릿 스레드가 계속 물고 있을 필요가 없음
+		// DeferredResult는 별도의 워크 스레드가 생기지 않음
 
-		@GetMapping("/callable")
-		public Callable<String> callable() throws InterruptedException {
-			log.info("callable");
-			return () -> {
-				// 서블릿 스레드는 즉시 리턴하고, 작업 스레드가 처리
-				log.info("async");
-				Thread.sleep(2000);
-				return "hello";
-			};
+		Queue<DeferredResult<String>> results = new ConcurrentLinkedQueue<>();
+
+		@GetMapping("/dr")
+		public DeferredResult<String> callable() throws InterruptedException {
+			log.info("dr");
+			DeferredResult<String> dr = new DeferredResult<>();
+			results.add(dr);
+			return dr;
 		}
-//		public String callable() throws InterruptedException {
-//			log.info("async");
-//			Thread.sleep(2000);
-//			return "hello";
-//		}
+
+		@GetMapping("/dr/count")
+		public String drcount() {
+			return String.valueOf(results.size());
+		}
+
+		@GetMapping("/dr/event")
+		public String drevent(String msg) {
+			for (DeferredResult<String> dr : results) {
+				dr.setResult("Hello " + msg);
+				results.remove(dr);
+			}
+			return "OK";
+		}
 	}
 
 	@Bean
@@ -63,6 +74,30 @@ public class ReactiveApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(ReactiveApplication.class, args);
 	}
+
+//	---
+
+//	@RestController
+//	public static class MyController {
+//
+//		// 굳이 작업을 서블릿 스레드가 계속 물고 있을 필요가 없음
+//
+//		@GetMapping("/callable")
+//		public Callable<String> callable() throws InterruptedException {
+//			log.info("callable");
+//			return () -> {
+//				// 서블릿 스레드는 즉시 리턴하고, 작업 스레드가 처리
+//				log.info("async");
+//				Thread.sleep(2000);
+//				return "hello";
+//			};
+//		}
+////		public String callable() throws InterruptedException {
+////			log.info("async");
+////			Thread.sleep(2000);
+////			return "hello";
+////		}
+//	}
 
 //	---
 
