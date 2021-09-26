@@ -16,9 +16,11 @@ import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.concurrent.ListenableFuture;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 
 @Slf4j
@@ -26,47 +28,76 @@ import java.util.concurrent.Future;
 @EnableAsync
 public class ReactiveApplication {
 
-	@Component
-	public static class MyService {
+	@RestController
+	public static class MyController {
 
-		@Async(value = "tp") // 비동기 작업. value에 스레드풀 빈이름 지정 가능
-		public ListenableFuture<String> hello() throws InterruptedException {
-			log.info("hello()");
-//			Thread.sleep(2000);
-			return new AsyncResult<>("Hello");
+		// 굳이 작업을 서블릿 스레드가 계속 물고 있을 필요가 없음
+
+		@GetMapping("/callable")
+		public Callable<String> callable() throws InterruptedException {
+			log.info("callable");
+			return () -> {
+				// 서블릿 스레드는 즉시 리턴하고, 작업 스레드가 처리
+				log.info("async");
+				Thread.sleep(2000);
+				return "hello";
+			};
 		}
+//		public String callable() throws InterruptedException {
+//			log.info("async");
+//			Thread.sleep(2000);
+//			return "hello";
+//		}
 	}
 
-	@Bean // Async는 별도로 구현한 빈이 있으면 기본적으로 이걸 쓰게 됨
+	@Bean
 	ThreadPoolTaskExecutor tp() {
-		ThreadPoolTaskExecutor te = new ThreadPoolTaskExecutor();
-		te.setCorePoolSize(10); // 초기에 기본 스레드풀 개수
-		te.setMaxPoolSize(100); // 큐가 꽉차면 그 시점에 맥스 풀사이즈까지 늘려주는 것
-		te.setQueueCapacity(200); // 코어 풀 사이즈가 꽉차면 큐가 참
-		te.setThreadNamePrefix("mythread");
-		te.initialize();
-		return te;
+		ThreadPoolTaskExecutor e = new ThreadPoolTaskExecutor();
+		e.setCorePoolSize(100);
+		e.setQueueCapacity(50);
+		e.setMaxPoolSize(150);
+		e.initialize();
+		return e;
 	}
 
 	public static void main(String[] args) {
-		try (ConfigurableApplicationContext c = SpringApplication.run(ReactiveApplication.class, args)) {
-
-		}
+		SpringApplication.run(ReactiveApplication.class, args);
 	}
 
-	@Autowired MyService myService;
+//	---
 
-	@Bean
-	ApplicationRunner run() {
-		// 모든 빈이 다 뜨면 실행
-		return args -> {
-			log.info("run()");
-			ListenableFuture<String> f = myService.hello();
-			f.addCallback(s -> System.out.println("s = " + s),
-					e -> System.out.println("e = " + e.getMessage()));
-			log.info("exit");
-		};
-	}
+//	@Component
+//	public static class MyService {
+//
+//		@Async
+//		public ListenableFuture<String> hello() throws InterruptedException {
+//			log.info("hello()");
+////			Thread.sleep(2000);
+//			return new AsyncResult<>("Hello");
+//		}
+//	}
+//
+//	public static void main(String[] args) {
+//		try (ConfigurableApplicationContext c = SpringApplication.run(ReactiveApplication.class, args)) {
+//
+//		}
+//	}
+//
+//	@Autowired MyService myService;
+//
+//	@Bean
+//	ApplicationRunner run() {
+//		// 모든 빈이 다 뜨면 실행
+//		return args -> {
+//			log.info("run()");
+//			ListenableFuture<String> f = myService.hello();
+//			f.addCallback(s -> System.out.println("s = " + s),
+//					e -> System.out.println("e = " + e.getMessage()));
+//			log.info("exit");
+//		};
+//	}
+
+//	---
 
 //	@RestController
 //	public static class Controller {
