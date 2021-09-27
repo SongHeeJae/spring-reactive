@@ -18,6 +18,7 @@ import org.springframework.scheduling.annotation.AsyncResult;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,6 +44,8 @@ public class ReactiveApplication {
 	@RestController
 	public static class MyController {
 
+		@Autowired MyService myService;
+
 		AsyncRestTemplate rt = new AsyncRestTemplate(
 				new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
 
@@ -62,7 +65,12 @@ public class ReactiveApplication {
 			f1.addCallback(s -> {
 				ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity("http://localhost:8081/service2?req={req}", String.class, s.getBody());
 				f2.addCallback(s2 -> {
-					dr.setResult(s2.getBody());
+					ListenableFuture<String> f3 = myService.work(s2.getBody());
+					f3.addCallback(s3 -> {
+						dr.setResult(s3);
+					}, e-> {
+						dr.setErrorResult(e.getMessage());
+					});
 				}, e-> {
 					dr.setErrorResult(e.getMessage());
 				});
@@ -71,6 +79,23 @@ public class ReactiveApplication {
 			});
 			return dr;
 		}
+	}
+
+	@Service
+	public static class MyService {
+		@Async
+		public ListenableFuture<String> work(String req) {
+			return new AsyncResult<>(req + "/asyncwork");
+		}
+	}
+
+	@Bean
+	ThreadPoolTaskExecutor myThreadPool() {
+		final ThreadPoolTaskExecutor te = new ThreadPoolTaskExecutor();
+		te.setCorePoolSize(1);
+		te.setMaxPoolSize(1);
+		te.initialize();
+		return te;
 	}
 
 	public static void main(String[] args) {
