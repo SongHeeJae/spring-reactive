@@ -47,13 +47,24 @@ public class ReactiveApplication {
 				new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
 
 		@GetMapping("/rest")
-		public ListenableFuture<ResponseEntity<String>> rest(int idx) {
+		public DeferredResult<String> rest(int idx) {
 			// Controller가 이것을 리턴하면 스레드는 반납하고,
 			// 콜백은 스프링 mvc가 알아서 등록해줌. 응답 값에 따라서 리턴해준다.
 			// 톰캣 스레드는 1개지만, AsyncRestTemplate은 외부 API를 호출할 때,
 			// 1개당 백그라운드 스레드 1개씩 만듦. 굉장히 큰 비용.
 			// netty가 제공하는 호출 기법 사용하면, 스레드가 약간 말고는 별로 안늘어남.
-			return rt.getForEntity("http://localhost:8081/service?req={req}", String.class, "hello" + idx);
+
+			// 언젠가 이 오브젝트의 값을 써주면 이 요청의 응답으로 처리해줌
+			DeferredResult<String> dr = new DeferredResult<>();
+
+			ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity("http://localhost:8081/service?req={req}", String.class, "hello" + idx);
+
+			f1.addCallback(s -> {
+				dr.setResult(s.getBody() + "/work");
+			}, e-> {
+				dr.setErrorResult(e.getMessage());
+			});
+			return dr;
 		}
 	}
 
