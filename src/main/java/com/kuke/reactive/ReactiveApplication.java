@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.context.request.async.DeferredResult;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -50,12 +51,21 @@ public class ReactiveApplication {
 			// 언젠가 이 오브젝트의 값을 써주면 이 요청의 응답으로 처리해줌
 			DeferredResult<String> dr = new DeferredResult<>();
 
-			Completion
-					.from(rt.getForEntity(URL1, String.class, "hello" + idx))
-					.andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
-					.andApply(s -> myService.work(s.getBody()))
-					.andError(e -> dr.setErrorResult(e.toString()))
-					.andAccept(s -> dr.setResult(s));
+			toCF(rt.getForEntity(URL1, String.class, "hello" + idx))
+					.thenCompose(s -> toCF(rt.getForEntity(URL2, String.class, s.getBody())))
+					.thenApplyAsync(s -> myService.work(s.getBody()))
+					.thenAccept(s -> dr.setResult(s))
+					.exceptionally(e ->{
+						dr.setErrorResult(e.getMessage());
+						return (Void) null;
+					});
+
+//			Completion
+//					.from(rt.getForEntity(URL1, String.class, "hello" + idx))
+//					.andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
+//					.andApply(s -> myService.work(s.getBody()))
+//					.andError(e -> dr.setErrorResult(e.toString()))
+//					.andAccept(s -> dr.setResult(s));
 
 //			ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity(URL1, String.class, "hello" + idx);
 //
@@ -75,6 +85,16 @@ public class ReactiveApplication {
 //				dr.setErrorResult(e.getMessage());
 //			});
 			return dr;
+		}
+
+		public <T> CompletableFuture<T> toCF(ListenableFuture<T> lf) {
+			CompletableFuture<T> cf = new CompletableFuture<>();
+			lf.addCallback(s -> {
+				cf.complete(s);
+			}, e -> {
+				cf.completeExceptionally(e);
+			});
+			return cf;
 		}
 	}
 
@@ -165,9 +185,8 @@ public class ReactiveApplication {
 
 	@Service
 	public static class MyService {
-		@Async
-		public ListenableFuture<String> work(String req) {
-			return new AsyncResult<>(req + "/asyncwork");
+		public String work(String req) {
+			return req + "/asyncwork";
 		}
 	}
 
