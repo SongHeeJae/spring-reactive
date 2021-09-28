@@ -1,12 +1,15 @@
 package com.kuke.reactive;
 
 import io.netty.channel.nio.NioEventLoopGroup;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.web.embedded.netty.NettyReactiveWebServerFactory;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.Netty4ClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -16,17 +19,23 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.CoreSubscriber;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 @Slf4j
 @SpringBootApplication
@@ -34,32 +43,66 @@ import java.util.function.Function;
 @RestController
 public class ReactiveApplication {
 
-	@GetMapping("/")
-	Mono<String> hello() {
-		// subscriber가 구독한 시점에 데이터가 흘러가기 시작함.
-		// 하나의 publisher는 여러 개의 subscriber를 가질 수 있음
-		// publisher의 데이터 공급은 두 가지 타입이 있음
-		// 1. Cold : 어느 Subscriber가 요청하든지 항상 동일한 결과가 세팅되어있는 경우
-		// 구독을 할 때 마다 publisher가 가지고 있는 데이터를 처음부터 다 보내주게 됨
-		// 2. Hot : 구독한 시점부터 실시간으로 일어나는 외부의 이벤트들.
-		log.info("pos1");
-
-		String msg = generateHello();
-		Mono<String> m = Mono.just(msg).doOnNext(c -> log.info(c)).log();
-//		m.subscribe();
-
-		log.info("pos2");
-		return m;
+	@GetMapping("/event/{id}")
+	Mono<List<Event>> event(@PathVariable Long id) {
+		List<Event> list = Arrays.asList(new Event(1L, "event1")
+				, new Event(2L, "event2"));
+		return Mono.just(list).log();
 	}
 
-	private String generateHello() {
-		log.info("method generateHello()");
-		return "Hello Mono";
+	@GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	Flux<Event> events() {
+		Flux<Event> es = Flux
+				.<Event, Long>generate(() -> 1L, (id, sink) -> {
+					sink.next(new Event(id, "value" + id));
+					return id + 1;
+				});
+		Flux<Long> interval = Flux.interval(Duration.ofSeconds(1));
+		
+		return Flux.zip(
+				es, interval
+		).map(tu -> tu.getT1());
+
+//		return Flux
+//				.<Event>generate(sink -> sink.next(new Event(System.currentTimeMillis(), "value")))
+//				.delayElements(Duration.ofSeconds(1))
+//				.take(10);
 	}
 
 	public static void main(String[] args) {
 		SpringApplication.run(ReactiveApplication.class, args);
 	}
+
+	@Data @AllArgsConstructor
+	public static class Event {
+		long id;
+		String value;
+	}
+
+// ---
+
+//	@GetMapping("/")
+//	Mono<String> hello() {
+//		// subscriber가 구독한 시점에 데이터가 흘러가기 시작함.
+//		// 하나의 publisher는 여러 개의 subscriber를 가질 수 있음
+//		// publisher의 데이터 공급은 두 가지 타입이 있음
+//		// 1. Cold : 어느 Subscriber가 요청하든지 항상 동일한 결과가 세팅되어있는 경우
+//		// 구독을 할 때 마다 publisher가 가지고 있는 데이터를 처음부터 다 보내주게 됨
+//		// 2. Hot : 구독한 시점부터 실시간으로 일어나는 외부의 이벤트들.
+//		log.info("pos1");
+//
+//		String msg = generateHello();
+//		Mono<String> m = Mono.just(msg).doOnNext(c -> log.info(c)).log();
+////		m.subscribe();
+//
+//		log.info("pos2");
+//		return m;
+//	}
+//
+//	private String generateHello() {
+//		log.info("method generateHello()");
+//		return "Hello Mono";
+//	}
 
 //	---
 
