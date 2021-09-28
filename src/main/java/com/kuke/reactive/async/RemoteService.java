@@ -13,10 +13,10 @@ import org.springframework.web.bind.annotation.RestController;
 @SpringBootApplication
 public class RemoteService {
 
-    @Bean
-    TomcatReactiveWebServerFactory tomcatReactiveWebServerFactory() {
-        return new TomcatReactiveWebServerFactory();
-    }
+//    @Bean
+//    TomcatReactiveWebServerFactory tomcatReactiveWebServerFactory() {
+//        return new TomcatReactiveWebServerFactory();
+//    }
 
     @RestController
     public static class MyController {

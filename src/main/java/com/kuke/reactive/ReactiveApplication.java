@@ -21,6 +21,7 @@ import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Mono;
 
 import java.util.concurrent.CompletableFuture;
@@ -29,41 +30,66 @@ import java.util.function.Function;
 
 @Slf4j
 @SpringBootApplication
-@EnableAsync
+//@EnableAsync
 @RestController
 public class ReactiveApplication {
 
-	static final String URL1 = "http://localhost:8081/service?req={req}";
-	static final String URL2 = "http://localhost:8081/service2?req={req}";
+	@GetMapping("/")
+	Mono<String> hello() {
+		// subscriber가 구독한 시점에 데이터가 흘러가기 시작함.
+		// 하나의 publisher는 여러 개의 subscriber를 가질 수 있음
+		// publisher의 데이터 공급은 두 가지 타입이 있음
+		// 1. Cold : 어느 Subscriber가 요청하든지 항상 동일한 결과가 세팅되어있는 경우
+		// 구독을 할 때 마다 publisher가 가지고 있는 데이터를 처음부터 다 보내주게 됨
+		// 2. Hot : 구독한 시점부터 실시간으로 일어나는 외부의 이벤트들.
+		log.info("pos1");
 
-	@Autowired MyService myService;
+		String msg = generateHello();
+		Mono<String> m = Mono.just(msg).doOnNext(c -> log.info(c)).log();
+//		m.subscribe();
 
-	WebClient client = WebClient.create();
-
-	@GetMapping("/rest")
-	public Mono<String> rest(int idx) {
-		// 리턴하면 webflux가 리턴타입을 보고 실행해줌
-		return client.get().uri(URL1, idx).exchange()
-				.flatMap(c -> c.bodyToMono(String.class))
-				.flatMap(res -> client.get().uri(URL2, res).exchange())
-				.flatMap(c -> c.bodyToMono(String.class))
-				.flatMap(res -> Mono.fromCompletionStage(myService.work(res)));
+		log.info("pos2");
+		return m;
 	}
 
-	@Service
-	public static class MyService {
-		// 만약 이게 시간이 걸리는 작업이면, 위 작업은 netty 스레드를 타고 와서
-		// 실행되고 있는 작업이므로 처리속도가 늦어짐. 그래서 이것을
-		// 비동기 작업으로 실행해야함
-		@Async
-		public CompletableFuture<String> work(String req) {
-			return CompletableFuture.completedFuture(req + "/asyncwork");
-		}
+	private String generateHello() {
+		log.info("method generateHello()");
+		return "Hello Mono";
 	}
 
 	public static void main(String[] args) {
 		SpringApplication.run(ReactiveApplication.class, args);
 	}
+
+//	---
+
+//	static final String URL1 = "http://localhost:8081/service?req={req}";
+//	static final String URL2 = "http://localhost:8081/service2?req={req}";
+//
+//	@Autowired MyService myService;
+//
+//	WebClient client = WebClient.create();
+//
+//	@GetMapping("/rest")
+//	public Mono<String> rest(int idx) {
+//		// 리턴하면 webflux가 리턴타입을 보고 실행해줌
+//		return client.get().uri(URL1, idx).exchange()
+//				.flatMap(c -> c.bodyToMono(String.class))
+//				.flatMap(res -> client.get().uri(URL2, res).exchange())
+//				.flatMap(c -> c.bodyToMono(String.class))
+//				.flatMap(res -> Mono.fromCompletionStage(myService.work(res)));
+//	}
+//
+//	@Service
+//	public static class MyService {
+//		// 만약 이게 시간이 걸리는 작업이면, 위 작업은 netty 스레드를 타고 와서
+//		// 실행되고 있는 작업이므로 처리속도가 늦어짐. 그래서 이것을
+//		// 비동기 작업으로 실행해야함
+//		@Async
+//		public CompletableFuture<String> work(String req) {
+//			return CompletableFuture.completedFuture(req + "/asyncwork");
+//		}
+//	}
 
 // ---
 
