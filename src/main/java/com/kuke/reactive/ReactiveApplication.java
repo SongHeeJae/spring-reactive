@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.web.embedded.netty.NettyReactiveWebServerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.Netty4ClientHttpRequestFactory;
@@ -18,6 +19,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.AsyncRestTemplate;
 import org.springframework.web.context.request.async.DeferredResult;
+import org.springframework.web.reactive.function.client.ClientResponse;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -26,182 +30,205 @@ import java.util.function.Function;
 @Slf4j
 @SpringBootApplication
 @EnableAsync
+@RestController
 public class ReactiveApplication {
 
-	@RestController
-	public static class MyController {
+	static final String URL1 = "http://localhost:8081/service?req={req}";
+	static final String URL2 = "http://localhost:8081/service2?req={req}";
 
-		@Autowired MyService myService;
+	@Autowired MyService myService;
 
-		static final String URL1 = "http://localhost:8081/service?req={req}";
-		static final String URL2 = "http://localhost:8081/service2?req={req}";
+	WebClient client = WebClient.create();
 
-
-		AsyncRestTemplate rt = new AsyncRestTemplate(
-				new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
-
-		@GetMapping("/rest")
-		public DeferredResult<String> rest(int idx) {
-			// Controller가 이것을 리턴하면 스레드는 반납하고,
-			// 콜백은 스프링 mvc가 알아서 등록해줌. 응답 값에 따라서 리턴해준다.
-			// 톰캣 스레드는 1개지만, AsyncRestTemplate은 외부 API를 호출할 때,
-			// 1개당 백그라운드 스레드 1개씩 만듦. 굉장히 큰 비용.
-			// netty가 제공하는 호출 기법 사용하면, 스레드가 약간 말고는 별로 안늘어남.
-
-			// 언젠가 이 오브젝트의 값을 써주면 이 요청의 응답으로 처리해줌
-			DeferredResult<String> dr = new DeferredResult<>();
-
-			toCF(rt.getForEntity(URL1, String.class, "hello" + idx))
-					.thenCompose(s -> toCF(rt.getForEntity(URL2, String.class, s.getBody())))
-					.thenApplyAsync(s -> myService.work(s.getBody()))
-					.thenAccept(s -> dr.setResult(s))
-					.exceptionally(e ->{
-						dr.setErrorResult(e.getMessage());
-						return (Void) null;
-					});
-
-//			Completion
-//					.from(rt.getForEntity(URL1, String.class, "hello" + idx))
-//					.andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
-//					.andApply(s -> myService.work(s.getBody()))
-//					.andError(e -> dr.setErrorResult(e.toString()))
-//					.andAccept(s -> dr.setResult(s));
-
-//			ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity(URL1, String.class, "hello" + idx);
-//
-//			f1.addCallback(s -> {
-//				ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity(URL2, String.class, s.getBody());
-//				f2.addCallback(s2 -> {
-//					ListenableFuture<String> f3 = myService.work(s2.getBody());
-//					f3.addCallback(s3 -> {
-//						dr.setResult(s3);
-//					}, e-> {
-//						dr.setErrorResult(e.getMessage());
-//					});
-//				}, e-> {
-//					dr.setErrorResult(e.getMessage());
-//				});
-//			}, e-> {
-//				dr.setErrorResult(e.getMessage());
-//			});
-			return dr;
-		}
-
-		public <T> CompletableFuture<T> toCF(ListenableFuture<T> lf) {
-			CompletableFuture<T> cf = new CompletableFuture<>();
-			lf.addCallback(s -> {
-				cf.complete(s);
-			}, e -> {
-				cf.completeExceptionally(e);
-			});
-			return cf;
-		}
-	}
-
-	public static class AcceptCompletion<S> extends Completion<S, Void>{
-		public Consumer<S> con;
-		public AcceptCompletion(Consumer<S> con) {
-			this.con = con;
-		}
-
-		@Override
-		protected void run(S value) {
-			con.accept(value);
-		}
-	}
-
-	public static class ErrorCompletion<T> extends Completion<T, T>{
-		public Consumer<Throwable> econ;
-		public ErrorCompletion(Consumer<Throwable> econ) {
-			this.econ = econ;
-		}
-
-		@Override
-		protected void run(T value) {
-			if(next != null) next.run(value);
-		}
-
-		@Override
-		protected void error(Throwable e) {
-			econ.accept(e);
-		}
-	}
-
-	public static class ApplyCompletion<S, T> extends Completion<S, T> {
-		public Function<S, ListenableFuture<T>> fn;
-		public ApplyCompletion(Function<S, ListenableFuture<T>> fn) {
-			this.fn = fn;
-		}
-
-		@Override
-		protected void run(S value) {
-			final ListenableFuture<T> lf = fn.apply(value);
-			lf.addCallback(s -> complete(s), e->error(e));
-		}
-	}
-
-	public static class Completion<S, T> {
-		Completion next;
-
-		public void andAccept(Consumer<T> con) {
-			Completion<T, Void> c = new AcceptCompletion<>(con);
-			this.next = c;
-		}
-
-		public Completion<T, T> andError(Consumer<Throwable> econ) {
-			Completion<T, T> c = new ErrorCompletion<>(econ);
-			this.next = c;
-			return c;
-		}
-
-		public <V> Completion<T, V> andApply(Function<T, ListenableFuture<V>> fn) {
-			Completion<T, V> c = new ApplyCompletion<>(fn);
-			this.next = c;
-			return c;
-		}
-
-		public static <S, T> Completion<S, T> from(ListenableFuture<T> lf) {
-			Completion<S, T> c = new Completion<>();
-			lf.addCallback(s -> {
-				c.complete(s);
-			}, e-> {
-				c.error(e);
-			});
-			return c;
-		}
-
-		protected void error(Throwable e) {
-			if(next != null) next.error(e);
-		}
-
-		protected void complete(T s) {
-			if(next != null) next.run(s);
-		}
-
-		protected void run(S value) {
-
-		}
+	@GetMapping("/rest")
+	public Mono<String> rest(int idx) {
+		// 리턴하면 webflux가 리턴타입을 보고 실행해줌
+		return client.get().uri(URL1, idx).exchange()
+				.flatMap(c -> c.bodyToMono(String.class))
+				.flatMap(res -> client.get().uri(URL2, res).exchange())
+				.flatMap(c -> c.bodyToMono(String.class))
+				.flatMap(res -> Mono.fromCompletionStage(myService.work(res)));
 	}
 
 	@Service
 	public static class MyService {
-		public String work(String req) {
-			return req + "/asyncwork";
+		// 만약 이게 시간이 걸리는 작업이면, 위 작업은 netty 스레드를 타고 와서
+		// 실행되고 있는 작업이므로 처리속도가 늦어짐. 그래서 이것을
+		// 비동기 작업으로 실행해야함
+		@Async
+		public CompletableFuture<String> work(String req) {
+			return CompletableFuture.completedFuture(req + "/asyncwork");
 		}
-	}
-
-	@Bean
-	ThreadPoolTaskExecutor myThreadPool() {
-		final ThreadPoolTaskExecutor te = new ThreadPoolTaskExecutor();
-		te.setCorePoolSize(1);
-		te.setMaxPoolSize(1);
-		te.initialize();
-		return te;
 	}
 
 	public static void main(String[] args) {
 		SpringApplication.run(ReactiveApplication.class, args);
 	}
+
+// ---
+
+//	@RestController
+//	public static class MyController {
+//
+//		@Autowired MyService myService;
+//
+//		static final String URL1 = "http://localhost:8081/service?req={req}";
+//		static final String URL2 = "http://localhost:8081/service2?req={req}";
+//
+//		AsyncRestTemplate rt = new AsyncRestTemplate(
+//				new Netty4ClientHttpRequestFactory(new NioEventLoopGroup(1)));
+//
+//		@GetMapping("/rest")
+//		public DeferredResult<String> rest(int idx) {
+//			// Controller가 이것을 리턴하면 스레드는 반납하고,
+//			// 콜백은 스프링 mvc가 알아서 등록해줌. 응답 값에 따라서 리턴해준다.
+//			// 톰캣 스레드는 1개지만, AsyncRestTemplate은 외부 API를 호출할 때,
+//			// 1개당 백그라운드 스레드 1개씩 만듦. 굉장히 큰 비용.
+//			// netty가 제공하는 호출 기법 사용하면, 스레드가 약간 말고는 별로 안늘어남.
+//
+//			// 언젠가 이 오브젝트의 값을 써주면 이 요청의 응답으로 처리해줌
+//			DeferredResult<String> dr = new DeferredResult<>();
+//
+//			toCF(rt.getForEntity(URL1, String.class, "hello" + idx))
+//					.thenCompose(s -> toCF(rt.getForEntity(URL2, String.class, s.getBody())))
+//					.thenApplyAsync(s -> myService.work(s.getBody()))
+//					.thenAccept(s -> dr.setResult(s))
+//					.exceptionally(e ->{
+//						dr.setErrorResult(e.getMessage());
+//						return (Void) null;
+//					});
+//
+////			Completion
+////					.from(rt.getForEntity(URL1, String.class, "hello" + idx))
+////					.andApply(s -> rt.getForEntity(URL2, String.class, s.getBody()))
+////					.andApply(s -> myService.work(s.getBody()))
+////					.andError(e -> dr.setErrorResult(e.toString()))
+////					.andAccept(s -> dr.setResult(s));
+//
+////			ListenableFuture<ResponseEntity<String>> f1 = rt.getForEntity(URL1, String.class, "hello" + idx);
+////
+////			f1.addCallback(s -> {
+////				ListenableFuture<ResponseEntity<String>> f2 = rt.getForEntity(URL2, String.class, s.getBody());
+////				f2.addCallback(s2 -> {
+////					ListenableFuture<String> f3 = myService.work(s2.getBody());
+////					f3.addCallback(s3 -> {
+////						dr.setResult(s3);
+////					}, e-> {
+////						dr.setErrorResult(e.getMessage());
+////					});
+////				}, e-> {
+////					dr.setErrorResult(e.getMessage());
+////				});
+////			}, e-> {
+////				dr.setErrorResult(e.getMessage());
+////			});
+//			return dr;
+//		}
+//
+//		public <T> CompletableFuture<T> toCF(ListenableFuture<T> lf) {
+//			CompletableFuture<T> cf = new CompletableFuture<>();
+//			lf.addCallback(s -> {
+//				cf.complete(s);
+//			}, e -> {
+//				cf.completeExceptionally(e);
+//			});
+//			return cf;
+//		}
+//	}
+//
+//	public static class AcceptCompletion<S> extends Completion<S, Void>{
+//		public Consumer<S> con;
+//		public AcceptCompletion(Consumer<S> con) {
+//			this.con = con;
+//		}
+//
+//		@Override
+//		protected void run(S value) {
+//			con.accept(value);
+//		}
+//	}
+//
+//	public static class ErrorCompletion<T> extends Completion<T, T>{
+//		public Consumer<Throwable> econ;
+//		public ErrorCompletion(Consumer<Throwable> econ) {
+//			this.econ = econ;
+//		}
+//
+//		@Override
+//		protected void run(T value) {
+//			if(next != null) next.run(value);
+//		}
+//
+//		@Override
+//		protected void error(Throwable e) {
+//			econ.accept(e);
+//		}
+//	}
+//
+//	public static class ApplyCompletion<S, T> extends Completion<S, T> {
+//		public Function<S, ListenableFuture<T>> fn;
+//		public ApplyCompletion(Function<S, ListenableFuture<T>> fn) {
+//			this.fn = fn;
+//		}
+//
+//		@Override
+//		protected void run(S value) {
+//			final ListenableFuture<T> lf = fn.apply(value);
+//			lf.addCallback(s -> complete(s), e->error(e));
+//		}
+//	}
+//
+//	public static class Completion<S, T> {
+//		Completion next;
+//
+//		public void andAccept(Consumer<T> con) {
+//			Completion<T, Void> c = new AcceptCompletion<>(con);
+//			this.next = c;
+//		}
+//
+//		public Completion<T, T> andError(Consumer<Throwable> econ) {
+//			Completion<T, T> c = new ErrorCompletion<>(econ);
+//			this.next = c;
+//			return c;
+//		}
+//
+//		public <V> Completion<T, V> andApply(Function<T, ListenableFuture<V>> fn) {
+//			Completion<T, V> c = new ApplyCompletion<>(fn);
+//			this.next = c;
+//			return c;
+//		}
+//
+//		public static <S, T> Completion<S, T> from(ListenableFuture<T> lf) {
+//			Completion<S, T> c = new Completion<>();
+//			lf.addCallback(s -> {
+//				c.complete(s);
+//			}, e-> {
+//				c.error(e);
+//			});
+//			return c;
+//		}
+//
+//		protected void error(Throwable e) {
+//			if(next != null) next.error(e);
+//		}
+//
+//		protected void complete(T s) {
+//			if(next != null) next.run(s);
+//		}
+//
+//		protected void run(S value) {
+//
+//		}
+//	}
+//
+//	@Bean
+//	ThreadPoolTaskExecutor myThreadPool() {
+//		final ThreadPoolTaskExecutor te = new ThreadPoolTaskExecutor();
+//		te.setCorePoolSize(1);
+//		te.setMaxPoolSize(1);
+//		te.initialize();
+//		return te;
+//	}
 
 //	---
 

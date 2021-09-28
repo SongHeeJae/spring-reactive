@@ -4,6 +4,8 @@ import com.kuke.reactive.ReactiveApplication;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.web.embedded.tomcat.TomcatReactiveWebServerFactory;
+import org.springframework.context.annotation.Bean;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -11,19 +13,24 @@ import org.springframework.web.bind.annotation.RestController;
 @SpringBootApplication
 public class RemoteService {
 
+    @Bean
+    TomcatReactiveWebServerFactory tomcatReactiveWebServerFactory() {
+        return new TomcatReactiveWebServerFactory();
+    }
+
     @RestController
     public static class MyController {
         @GetMapping("/service")
         public String service(String req) throws InterruptedException {
 //            log.info("service() : {}", req);
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             return req + "/service1";
         }
 
         @GetMapping("/service2")
         public String service2(String req) throws InterruptedException {
 //            log.info("service() : {}", req);
-            Thread.sleep(2000);
+            Thread.sleep(1000);
             return req + "/service2";
         }
     }
